@@ -1,0 +1,211 @@
+---
+title: "ecommerce"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r }
+library(tidyverse)
+library(broom)
+library(ggpubr)
+library(ggmosaic)
+library(pROC)
+```
+#Q1
+```{r }
+ecommerce <- read.csv("ecommerce.csv")
+
+ecommerce <- mutate(ecommerce, discount=factor(discount),
+                    conversion=factor(conversion),
+                    source=factor(source),
+                    country=factor(country))
+summary(ecommerce)
+```
+Country - The country from which the user viewed the website (France, Germany, Ireland, or UK). More than 20,000 distinct viewers of a website from 4 nations are included in the dataset. The highest number of visitors are from the United Kingdom and lowest is from Ireland
+Source - The means by which the user arrived at the site. It could be through advertisements, a search, or a direct link. Most people (20749) accessed the site through search and very less people accessed the site through ads(1693)
+total_pages_visited - Number of pages visited by the visitor. Maximum number of pages visited by a viewer is 16 and minimum is a single page. On an average 4.344 pages were visited by each user
+visit_duration - The number of seconds the user spent on the site. Maximum time spent is 977.25 seconds and minimum time is 55.87 seconds. On an average around user spend around 260.68 seconds on the website
+Discount - Whether a visitor received discount. Viewer receives a discount of ten percent on first order. The number of people received the discount is 6036 and number of people who have not received discount is 19010
+Conversion - Whether the visitor transformed or bought something. Maximum number of people have not been converted which is 20640. Number of people who made a purchase is 4406
+
+#Q2
+```{r }
+m1 <- glm(conversion ~ discount, data = ecommerce, family = binomial)
+summary(m1)
+exp(1.10090)
+```
+The discountyes condition has a positive coefficient, and hence the effect is statistically significant.
+
+#Q3
+```{r }
+exp(coef(m1))
+```
+This shows that the effect of `discount` has an estimated odds ratio of 3.006, meaning that customers are 3.0068 times more likely to make a purchase when a discount is offered. Another way to think about this is that discount increases the purchase likelihood of a pass by 0.68%.
+
+#Q4
+```{r }
+exp(confint(m1))
+```
+The odds ratio for the discount yes is estimated to be in the range of [2.80 – 3.22], a significant positive effect. This demonstrates that the discount is beneficial but cannot say it is highly effective
+
+#Q5
+```{r }
+ggplot(data = ecommerce) + 
+  geom_mosaic(aes( 
+    x = product(discount),  
+    fill = conversion), 
+    offset = 0.02, 
+    divider = ddecker()) + 
+  facet_grid(~source,
+             scales = "free") +
+  theme_pubr() + 
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_text(angle = 90)) + 
+  labs(x = "", y = "")
+```
+From this plot we see that the three sources have somewhat different effects. Sales of products are successful when user visits the website through search, and very unsuccessful by ads. Furthermore, this implies that our model `discount ∼ conversion` may be inadequate and needs to account for the effect of `source`.
+
+#Q6
+```{r }
+m2 <- glm(conversion ~ discount + source, data = ecommerce, family = binomial)
+summary(m2)
+```
+The sourcedirect and sourcesearch condition has a positive coefficient, and hence the effect is statistically significant.
+
+#Q7
+```{r }
+exp(coef(m2))
+```
+This shows that the effect of `sourcedirect` has an estimated odds ratio of 2.0023, meaning that customers are 2.0023 times more likely to make a purchase when they visit the website through direct source. Another way to think about this is that the direct source increases the purchase likelihood of a pass by 0.23%.
+The effect of `sourcesearch` has an estimated odds ratio of 2.088, meaning that customers are 2.088 times more likely to make a purchase when they visit the website through search source. Another way to think about this is that the direct source increases the purchase likelihood of a pass by 8.8%.
+
+#Q8
+```{r }
+m3 <- glm(conversion ~
+                discount + 
+                source + 
+                discount:source, 
+              data = ecommerce, 
+              family = binomial)
+summary(m3)
+```
+The interaction of `discount` with `source` is statistically significant with a value of 0.30445 for discountyes:sourcedirect and 1.30923 for discountyes:sourcesearch
+
+#Q9
+```{r }
+exp(confint(m3))
+```
+The odds ratio for the discountyes:sourcedirect is estimated to be in the range of [0.95 – 1.92], a significant positive effect. This demonstrates that the discount with direct source is beneficial but cannot say it is highly effective
+#The odds ratio for the discountyes:sourcesearch is estimated to be in the range of [2.76 – 4.95], a significant positive effect. This demonstrates that the discount with search source is beneficial but cannot say it is highly effective
+
+#Q10
+```{r }
+m4 <- glm(conversion ~
+                discount + 
+                source + 
+                total_pages_visited +
+                visit_duration +
+                country +
+                discount:source, 
+              data = ecommerce, 
+              family = binomial)
+summary(m4)
+```
+discountyes with sourcesearch variable is highly significant. Sourcedirect and visit duration are also significant
+
+#Q11
+```{r }
+cor(ecommerce$total_pages_visited, ecommerce$visit_duration)
+```
+total_pages_visited and visit_duration are highly correlated. Any change in one of the variables impacts the other and it results in multicollinearity which makes the model unstable. Hence one of the variable needs to be removed
+
+#Q12
+```{r }
+m5 <- glm(conversion ~
+                discount + 
+                source + 
+                total_pages_visited +
+                country +
+                discount:source, 
+              data = ecommerce, 
+              family = binomial)
+summary(m5)
+```
+discountyes with sourcesearch and total_pages_visited variables are highly significant. Sourcedirect is also significant. By removing visit duration variable, we can see that total_pages_visited has become highly significant and it helps overcome the multicollinearity problem thereby making the model stable
+
+#Q13
+```{r }
+tidy(m5) %>%
+  mutate(exp_beta_llci = exp(confint(m5))[, 1],
+         exp_beta = exp(estimate), 
+         exp_beta_ulci = exp(confint(m5))[, 2]) %>% 
+  select(term, estimate, exp_beta_llci, exp_beta, exp_beta_ulci) %>% 
+  ggplot(aes(x = term, 
+             y = exp_beta,
+             ymin = exp_beta_llci,
+             ymax = exp_beta_ulci)) +
+  geom_point(size = 4) + 
+  geom_errorbar(width = 0.25) +
+  geom_hline(yintercept = 1, linetype = "dashed", 
+                    size = 1, color = "dodgerblue") + 
+  labs(title = "95% CI: Pass sign up odds by factor",
+       x = NULL,
+       y = "Likehood by Factor (odds ratio, main effect)") + 
+  coord_flip() + 
+  theme_pubr()
+```
+
+#Q14
+```{r }
+ecommerce$base_prob <- predict(
+  m5, 
+  ecommerce,  
+  type = "response")
+mean(ecommerce$base_prob)
+```
+Mean value of base_prob is 0.1759163
+
+#Q15
+```{r }
+ecommerce$pred_conversion <- 1 * (ecommerce$base_prob >= 0.5)
+table(ecommerce$pred_conversion)
+```
+Based on the above prediction, 1358 customers will be converted
+
+#Q16
+```{r }
+table(ecommerce$conversion, ecommerce$pred_conversion)
+Accuracy <- (20190+908)/(20190+450+3498+908)
+Accuracy
+```
+Accuracy or Hit rate = (TP+TN)/N = 0.84
+
+#Q17
+```{r }
+rocobj <- roc(ecommerce$conversion,
+              ecommerce$base_prob)
+rocobj$auc
+```
+Area under the curve = 0.7748
+
+#Q18
+```{r }
+ecommerce_new <- ecommerce
+ecommerce_new$total_pages_visited <- ecommerce_new$total_pages_visited + 1
+ecommerce$new_prob <- predict(m5, ecommerce_new, type = "response")
+mean(ecommerce$new_prob)
+```
+Mean value of new_prob = 0.2306219
+
+#Q19
+```{r }
+(mean(ecommerce$new_prob) - mean(ecommerce$base_prob))/mean(ecommerce$base_prob)
+```
+Lift metric = 0.310975
+

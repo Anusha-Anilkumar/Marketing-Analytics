@@ -1,0 +1,197 @@
+---
+title: 'cloud'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r }
+library(tidyr)
+library(tidyverse)
+library(dplyr)
+library(dfidx)
+library(mlogit)
+library(purrr)
+```
+#Q1
+```{r}
+cloud <- read.csv("cloud.csv", stringsAsFactors = T)
+summary(cloud)
+glimpse(cloud)
+```
+respondent_id - Unique identifier assigned to each of the user. There are a total of 200 users
+choiseset_id - a unique identification for each respondent's chosen set. There are a total of 15 choice sets available
+alternative_id - a unique identifier for every alternative in a choice set. 3 alternatives are available for each choice set
+#choice_id - a unique identification for each of the survey's choice sets. There are a total of 3000 choice ids. 
+cloud_storage - quantity of cloud storage provided by the cloud service platform. 3 levels of cloud storage are provided - 30gb, 2000gb and 5000gb. 3003 choices have 30gb storage, 3004 choices have 2000gb storage which is the highest, and 2993 choices have 5000gb which is the lowest
+customer_support - this attribute specifies whether the cloud service platform provides customer support. Customer support is provided for 4475 choices and not provided for 4525 choices
+cloud_services - services provided by the cloud service platform. 
+cloud services are provided with three levels: Email / Email + Video /Email + Video + Productivity
+price - cost of cloud services per month. There are 3 categories £6 per month / £12 per month / £18 per month
+choice - In each choice set, this attribute indicates which alternative was picked. If an alternative was selected, the value is 1; otherwise, it is 0
+
+#Q2
+```{r }
+cloud <- as_tibble(cloud)
+cloud$cloud_storage <- relevel(cloud$cloud_storage, ref = '30gb')
+cloud$price <- relevel(cloud$price, ref = 'p6')
+```
+cloud_storage and price are categorical ordinal attributes which follows a rank order and hence they need to be converted. Other attributes are categorical nominal and numeric which do not follow a rank order and hence there is no need of conversion. Cloud storage follows the rank order of 30gb, 2000gb and 5000gb. Price follows the rank order of p6, p12 and p18
+
+#Q3
+```{r }
+cloud <- cloud %>% 
+  mutate(price_n = gsub("p", "", price),
+         price_n = as.numeric(price_n))
+mean(cloud$price_n)
+```
+Mean value of price_n = 12.01533
+
+#Q4
+```{r }
+summary(cloud)
+sum(cloud$cloud_storage=="30gb" & cloud$choice==1)
+sum(cloud$cloud_services=="email" & cloud$choice==1)
+email_only <-(624/9000)*100
+email_only
+```
+Respondents choose a 30GB cloud storage for 830 times
+Percentage of respondents who chose email only as cloud service is 6.93%
+
+#Q5
+```{r }
+m_data <- dfidx(cloud, 
+                choice = "choice", 
+                idx = list(c("choice_id", "respondent_id"), "alternative_id"))
+m_data
+```
+m_data has 8 variables namely choiceset_id, cloud_storage, customer_support, cloud_services, price, choice, price_n and idx
+
+#Q6
+```{r }
+set.seed(123) 
+model1 <- mlogit(choice ~ 0 + cloud_storage + customer_support + cloud_services + price, data = m_data)
+summary(model1)$CoefTable
+```
+cloud_storage5000gb has a coefficient value of 0.8948827 which indicates that chances of purchase increases by 0.89 times if the cloud storage is 5000gb. pricep12 has a coefficient value of -0.8367952 which indicates that chances of purchase decreases by 0.83 times if the price is p12
+
+#Q7
+```{r }
+set.seed(123) 
+model2 <- mlogit(choice ~ 0 + cloud_storage + customer_support + cloud_services + price_n, data = m_data)
+summary(model2)$CoefTable
+```
+price_n has a coefficient value of -0.1339355 which indicates that as price increases, the chance of purchase of product decreases by 0.13 times
+
+#Q8
+```{r }
+lrtest(model1, model2)
+```
+From the output we can see that the Chi-Squared test-statistic is 0.4484 and the corresponding p-value is 0.5031. Since this p-value is not less than 0.05, we will fail to reject the null hypothesis. The predictor variable price_n in the model does not offer a significant improvement in fit
+
+#Q9
+```{r }
+predicted_propabilities <- predict(model2, cloud) %>% 
+  as_tibble()
+predicted_propabilities
+```
+The predicted probability of choosing the third alternative in the first choice set is 0.0284
+
+#Q10
+```{r }
+predicted_alternative <-
+  predicted_propabilities %>% 
+  rowid_to_column("choicesetid") %>% 
+  pivot_longer(!choicesetid, names_to = "choice", values_to = "prob") %>% 
+  group_by(choicesetid) %>% 
+  slice(which.max(prob)) %>% 
+  ungroup() %>% 
+  select(choice) %>% 
+  as_vector()
+predicted_alternative
+```
+Predicted alternative in the third choice set is 2
+
+#Q11
+```{r }
+selected_alternative <- 
+  cloud %>% 
+  filter(choice > 0) %>% 
+  select(alternative_id) %>% 
+  as_vector()
+selected_alternative
+```
+Selected alternative in the fifteenth choice set is 2
+
+#Q12
+```{r }
+table(selected_alternative, predicted_alternative)
+Accuracy <- (579+624+614)/3000
+Accuracy
+```
+If the predictions were random, the accuracy would be between 30-37%. Accuracy or Hit Rate is 0.6056
+
+#Q13
+```{r }
+predict.share <- function(model, d) {
+  temp <- model.matrix(update(model2$formula, 0 ~ .), data = d)[, -1]
+  u <- temp %*% model2$coef[colnames(temp)] 
+  probs <- t(exp(u) / sum(exp(u))) 
+  colnames(probs) <- paste("alternative", colnames(probs))
+  return(probs)
+}
+```
+
+#Q14
+```{r }
+d_base <- data.frame(
+  cloud_storage = c("30gb", "30gb", "30gb", "5000gb", "5000gb"),
+  customer_support = c("no", "no", "yes", "yes", "no"),
+  cloud_services = c("email", "email, video", "email", "email", "email, video, productivity"),
+  price_n = c(6, 12, 12, 18, 18))
+d_base
+```
+
+#Q15
+```{r }
+d_base <- cbind(d_base, as.vector(predict.share(model2, d_base)))
+colnames(d_base)[5] <- "predicted_share"
+d_base
+```
+Predicted market share for alternative four of this hypothetical market is 0.1445737
+
+#Q16
+```{r }
+d_new <- d_base
+d_new[5, "cloud_services"] <- "email, video"
+d_new$predicted_share <- as.vector(predict.share(model2, d_new))
+d_new
+```
+Predicted market share for alternative four of this hypothetical market is 0.1867029
+
+#Q17
+```{r }
+alternative <- ((d_new)[,5]-(d_base)[,5])/ (d_base)[,5]
+alternative
+```
+5th alternative is most affected. Its decreased by 45.24%
+
+#Q18
+```{r }
+-coef(model2)['customer_supportyes']/ coef(model2)['price_n']
+```
+A consumer would be willing to pay £3.68 per month for customer support
+
+#Q19
+```{r }
+-coef(model2)['cloud_storage2000gb']/ coef(model2)['price_n']
+```
+A consumer would be willing to pay £1.23 per month for an upgrade from 30GB to 2000GB cloud storage
+
+#Q20
+```{r }
+-(coef(model2)['cloud_storage5000gb']-coef(model2)['cloud_storage2000gb'])/ coef(model2)['price_n']
+```
+A consumer would be willing to pay £5.44 per month for an upgrade from 2000GB to 5000GB cloud storage
