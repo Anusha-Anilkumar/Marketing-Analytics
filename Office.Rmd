@@ -1,0 +1,143 @@
+---
+title: "Office"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+library(tidyverse)
+library(janitor)
+library(dplyr)
+#Question1
+respondent <- read_csv("office.csv")
+respondent2 <- mutate(respondent, professional=factor(professional))
+summary(respondent2) 
+
+#Question2
+data <- respondent2 %>% select(variety_of_choice, electronics, furniture, quality_of_service, low_prices, return_policy)
+view(data)
+scaled_data <- scale(data, center = TRUE, scale = TRUE)
+summary(scaled_data)
+#min and max value attribute = electronics
+
+#Question3
+distances <- dist(scaled_data, method = "euclidean")
+set.seed(123)
+as.matrix(distances)[1:5, 1:5] 
+hier_clust <- hclust(distances, method = "ward.D2") 
+plot(hier_clust)
+
+#Question4
+rect.hclust(hier_clust, k = 6, border = "blue")
+hcluster_groups <- cutree(hier_clust, k = 6)
+table(hcluster_groups)
+
+#Question5
+library(flexclust)
+hier_clust_flex <- as.kcca(hier_clust, scaled_data, k = 6)
+#2 cluster memberships have changed
+
+table(hcluster_groups, clusters(hier_clust_flex))
+
+data <- data %>% 
+  mutate(hcluster_groups = hcluster_groups)
+
+data %>% 
+  group_by(hcluster_groups) %>% # group by cluster
+  summarise_all(~ mean(.x)) %>% # calculate the mean per group 
+  print(width = Inf)
+
+barchart(hier_clust_flex, main = "Segment Profiles")
+
+#Question8
+rect.hclust(hier_clust, k = 5, border = "blue")
+hcluster_groups5 <- cutree(hier_clust, k = 5)
+table(hcluster_groups5)
+hier_clust_flex5 <- as.kcca(hier_clust, scaled_data, k = 5)
+hcluster_groups5 <- factor(hcluster_groups5, 
+              levels = c(1, 2, 3, 4, 5),
+              labels = c("Variety of choice and electronics HC", "Low-prices HC", "Return policy HC", "Electronics HC", "Quality of service HC"))
+table(hcluster_groups5, clusters(hier_clust_flex5))
+barchart(hier_clust_flex5, main = "Segment Profiles")
+
+data_std <- scale(respondent2[, c("respondent_id",
+                           "variety_of_choice",
+                           "electronics",
+                           "furniture",
+                           "quality_of_service",
+                           "low_prices",
+                           "return_policy",
+                           "professional",
+                           "income",
+                           "age")]) %>% 
+  as_tibble()
+
+respondent2 %>% # take the std data
+  mutate(hcluster_groups5 = factor(hcluster_groups5)) %>% # add the cluster assignment
+  group_by(hcluster_groups5) %>% # group by cluster
+  mutate(n = n()) %>% # calculate the n per group 
+  summarise_all(~ mean(.x)) %>% # calculate the mean per group 
+  mutate(prop = n/sum(n)) %>% # calculate the prop per group 
+  print(width = Inf) # print all columns
+
+#K-means
+set.seed(123)
+kmeans_clust <- kmeans(scaled_data, 
+                       centers = 5, 
+                       iter.max = 1000,
+                       nstart = 100)
+table(kmeans_clust$cluster)
+kmeans_clust$centers
+
+respondent <- respondent %>% 
+  mutate(kmeans_clust = kmeans_clust$cluster)
+
+respondent <- respondent %>% 
+  mutate(hcluster_groups5 = hcluster_groups5)
+
+
+respondent2 %>%
+  select(-hcluster_groups5) %>% # drop the cluster from the hc
+  group_by(kcluster_groups) %>% # group by cluster
+  summarise_all(~ mean(.x)) %>% # calculate the mean per group 
+  print(width = Inf)
+
+kmeans_clust <- factor(
+  kmeans_clust,
+  levels = c(1, 2, 3, 4, 5),
+  labels = c("Variety of choice and electronics KC", "Low-prices KC", "Return policy KC", "Electronics KC", "Quality of service KC"))
+
+respondent <- respondent %>% mutate(kmeans_clust = kmeans_clust)
+respondent %>%
+  tabyl(kmeans_clust, hcluster_groups5) %>% 
+  adorn_totals(c("row", "col")) %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+  
+#First cluster has 61 observations
+#First cluster has 60 observations
+#First cluster has 29 observations
+#First cluster has 33 observations
+#First cluster has 17 observations
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
